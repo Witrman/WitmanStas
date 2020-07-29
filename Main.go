@@ -61,7 +61,6 @@ func addDataDB() {
 	errExc(err)
 	errExc(session.CommitTransaction(context.TODO()))
 	session.EndSession(context.TODO())
-
 	fmt.Println("Documents dropped and added ")
 }
 

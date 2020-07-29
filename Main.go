@@ -10,7 +10,7 @@ import (
 	//"go.mongodb.org/mongo-driver/mongo/readpref"
 )
 
-type autentification struct {
+type authentication struct {
 	GUID    string
 	Access  string
 	Refresh string
@@ -23,6 +23,11 @@ func main() {
 	addDataDB()
 	closeDB()
 }
+func errExc(err error) {
+	if err != nil {
+		log.Fatal(err)
+	}
+}
 
 func ConnectDB() {
 	// Create client
@@ -30,56 +35,37 @@ func ConnectDB() {
 	client, err = mongo.NewClient(options.Client().ApplyURI(
 		"mongodb+srv://user:user@clustervs.rwrgh.mongodb.net/" +
 			"BaseOne?retryWrites=true&w=majority"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create connect
-	err = client.Connect(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Check the connection
-	err = client.Ping(context.TODO(), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Connected to MongoDB Succesfull")
+	errExc(err)
+	errExc(client.Connect(context.TODO()))
+	errExc(client.Ping(context.TODO(), nil))
+	fmt.Println("Connected to MongoDB Successful")
 }
 
 func addDataDB() {
-	user1 := autentification{"Jdfjvnsskdjvns1", "GhkjhsKd89DhjivsusHhfuidh9fvhu1", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu1"}
-	user2 := autentification{"Jdfjvnsskdjvns2", "GhkjhsKd89DhjivsusHhfuidh9fvhu2", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu2"}
-	user3 := autentification{"Jdfjvnsskdjvns3", "GhkjhsKd89DhjivsusHhfuidh9fvhu3", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu3"}
+	user1 := authentication{"Jdfjvnsskdjvns1", "GhkjhsKd89DhjivsusHhfuidh9fvhu1", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu1"}
+	user2 := authentication{"Jdfjvnsskdjvns2", "GhkjhsKd89DhjivsusHhfuidh9fvhu2", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu2"}
+	user3 := authentication{"Jdfjvnsskdjvns3", "GhkjhsKd89DhjivsusHhfuidh9fvhu3", "lilkdjfnlHLIUHerfgiwebllsdbLJDBLK9fvhu3"}
 
 	collection := client.Database("BaseOne").Collection("ACol")
 	fmt.Println("Connected to Datebase and Collection!")
-	fmt.Println(collection.FindOne(context.TODO(), user1))
-	err := collection.Drop(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
+	session, err := client.StartSession()
+	errExc(err)
 
-	insertResult, err := collection.InsertOne(context.TODO(), user1)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Inserted a single document: ", insertResult.InsertedID)
+	errExc(session.StartTransaction())
+	errExc(collection.Drop(context.TODO()))
+	_, err = collection.InsertOne(context.TODO(), user1)
+	errExc(err)
+	_, err = collection.InsertOne(context.TODO(), user2)
+	errExc(err)
+	_, err = collection.InsertOne(context.TODO(), user3)
+	errExc(err)
+	errExc(session.CommitTransaction(context.TODO()))
+	session.EndSession(context.TODO())
 
-	users := []interface{}{user2, user3}
-	insertManyResult, err := collection.InsertMany(context.TODO(), users)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Inserted multiple documents: ", insertManyResult.InsertedIDs)
-
+	fmt.Println("Documents dropped and added ")
 }
 
 func closeDB() {
-	err := client.Disconnect(context.TODO())
-	if err != nil {
-		log.Fatal(err)
-	}
+	errExc(client.Disconnect(context.TODO()))
 	fmt.Println("Connection to MongoDB closed.")
 }

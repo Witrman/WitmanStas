@@ -20,7 +20,6 @@ var client *mongo.Client
 
 func main() {
 	ConnectDB()
-
 	addDataDB()
 	closeDB()
 }

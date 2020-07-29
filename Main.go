@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"github.com/gorilla/mux"
 	"log"
+	"net/http"
 	//  "go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -22,6 +24,7 @@ func main() {
 	ConnectDB()
 	addDataDB()
 	closeDB()
+	handlers()
 }
 func errExc(err error) {
 	if err != nil {
@@ -50,8 +53,8 @@ func addDataDB() {
 	fmt.Println("Connected to Datebase and Collection!")
 	session, err := client.StartSession()
 	errExc(err)
-
 	errExc(session.StartTransaction())
+
 	errExc(collection.Drop(context.TODO()))
 	_, err = collection.InsertOne(context.TODO(), user1)
 	errExc(err)
@@ -59,6 +62,7 @@ func addDataDB() {
 	errExc(err)
 	_, err = collection.InsertOne(context.TODO(), user3)
 	errExc(err)
+
 	errExc(session.CommitTransaction(context.TODO()))
 	session.EndSession(context.TODO())
 	fmt.Println("Documents dropped and added ")
@@ -67,4 +71,29 @@ func addDataDB() {
 func closeDB() {
 	errExc(client.Disconnect(context.TODO()))
 	fmt.Println("Connection to MongoDB closed.")
+}
+
+func handlers() {
+	router := mux.NewRouter()
+	var NotImplemented = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("Not Implemented"))
+		errExc(err)
+	})
+
+	router.Handle("/receive", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("Recieve"))
+		errExc(err)
+	})).Methods("Get")
+
+	router.Handle("/refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("refrashhhh"))
+		errExc(err)
+	})).Methods("Get")
+
+	router.Handle("/delete", NotImplemented).Methods("Get")
+
+	router.Handle("/clear", NotImplemented).Methods("Get")
+
+	errExc(http.ListenAndServe(":3000", router))
+
 }

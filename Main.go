@@ -27,7 +27,9 @@ func main() {
 func ConnectDB() {
 	// Create client
 	var err error
-	client, err = mongo.NewClient(options.Client().ApplyURI("mongodb+srv://user:user@clustervs.rwrgh.mongodb.net/BaseOne?retryWrites=true&w=majority"))
+	client, err = mongo.NewClient(options.Client().ApplyURI(
+		"mongodb+srv://user:user@clustervs.rwrgh.mongodb.net/" +
+			"BaseOne?retryWrites=true&w=majority"))
 	if err != nil {
 		log.Fatal(err)
 	}

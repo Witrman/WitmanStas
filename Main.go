@@ -105,6 +105,13 @@ func handlers() {
 		_, err := w.Write([]byte("clearing"))
 		errExc(err)
 	})
+	router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, err := w.Write([]byte("+/receive = get the access and refresh tokens \n" +
+			"\"+/refresh = refreshing access and refresh tokens \n" +
+			"\"+/delete = delete the refresh token \n" +
+			"\"+/clear = delete all refresh tokens for one user \n"))
+		errExc(err)
+	})).Methods("Get")
 
 	router.Handle("/receive", receive).Methods("Get")
 

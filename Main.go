@@ -9,6 +9,7 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"log"
 	"net/http"
+	"os"
 	"time"
 	//"go.mongodb.org/mongo-driver/mongo/readpref"
 )
@@ -113,6 +114,8 @@ func handlers() {
 
 	router.Handle("/clear", clear).Methods("Get")
 
-	errExc(http.ListenAndServe(":3000", router))
+	port := os.Getenv("PORT")
+	fmt.Println("listen on port: " + port)
+	errExc(http.ListenAndServe(":"+port, router))
 
 }

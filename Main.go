@@ -224,7 +224,7 @@ func handlers() {
 
 	port := os.Getenv("PORT")
 	fmt.Println("Listen on port: " + port)
-	errExc(http.ListenAndServe(":3000", router))
+	errExc(http.ListenAndServe(":"+port, router))
 }
 
 func receiver(user string) (string, string) {

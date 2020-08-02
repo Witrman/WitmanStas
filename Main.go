@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"github.com/auth0/go-jwt-middleware"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gorilla/mux"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"golang.org/x/crypto/bcrypt"
-	"log"
 	"net/http"
 	"os"
 	"time"
@@ -23,16 +23,23 @@ type userData struct {
 }
 
 var client *mongo.Client
+var mySigningKey = []byte("WitmanStas")
+var jwtMiddleware = jwtmiddleware.New(jwtmiddleware.Options{
+	ValidationKeyGetter: func(token *jwt.Token) (interface{}, error) {
+		return mySigningKey, nil
+	},
+	SigningMethod: jwt.SigningMethodHS512,
+})
 
 func main() {
-	fmt.Println("Application run")
+	fmt.Println("Server run")
 	ConnectDB()
 	handlers()
 	closeDB()
 }
 func errExc(err error) {
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
 	}
 }
 
@@ -54,21 +61,8 @@ func closeDB() {
 
 func handlers() {
 	router := mux.NewRouter()
-	router.Handle("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, err := w.Write([]byte(" +/receive?user=...  = get the access and refresh tokens \n" +
-			" +/refresh?refreshtoken=...  = refreshing access and refresh tokens \n" +
-			" +/delete?refreshtoken=...  = delete the refresh token \n" +
-			" +/clear?user=...  = delete all refresh tokens for one user \n"))
-		errExc(err)
-	})).Methods("Get")
-
 	router.Handle("/receive", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("user")
-		if username == "" {
-			_, err := w.Write([]byte("Please write username: /receive?user=\"username\""))
-			errExc(err)
-			return
-		}
 		AccessToken, RefreshToken := receiver(username)
 		collection := client.Database("BaseOne").Collection("ACol")
 		session, err := client.StartSession()
@@ -80,32 +74,29 @@ func handlers() {
 		errExc(session.CommitTransaction(context.TODO()))
 		session.EndSession(context.TODO())
 		RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
-		_, err = w.Write([]byte("username: \"" + username + "\" acquires a new tokens " +
-			"\nAccess token: " + AccessToken +
-			"\nRefresh token in base64: " + RefreshTokenBase64))
+		_, err = w.Write([]byte("Access: " + AccessToken +
+			" Refresh: " + RefreshTokenBase64 + " User: " + username))
 		errExc(err)
+		fmt.Println("Get tokens")
 
 	})).Methods("Get")
 
-	router.Handle("/refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
+	router.Handle("/refresh", jwtMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refresh, err := base64.StdEncoding.DecodeString(r.Header.Get("refresh"))
 		if err != nil {
-			_, err := w.Write([]byte("The refresh token is not invalid"))
+			_, err := w.Write([]byte("Некорректный токен обновления"))
 			errExc(err)
-			return
-		}
-		if len(refresh) < 2 {
-			_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
-			errExc(err)
+			fmt.Println("Invalid refresh token")
 			return
 		}
 		claims := jwt.MapClaims{}
 		_, err = jwt.ParseWithClaims(string(refresh), claims, func(token *jwt.Token) (interface{}, error) {
-			return []byte("WitmanStas"), nil
+			return mySigningKey, nil
 		})
 		if err != nil {
-			_, err := w.Write([]byte("The refresh token is not invalid"))
+			_, err := w.Write([]byte("Некорректный токен обновления"))
 			errExc(err)
+			fmt.Println("Invalid refresh token")
 			return
 		}
 		collection := client.Database("BaseOne").Collection("ACol")
@@ -129,33 +120,29 @@ func handlers() {
 				result := collection.FindOneAndReplace(context.TODO(), bson.D{{"refresh", users.Refresh}}, userData{GUID: username, Access: AccessToken, Refresh: bcryptHashResresh})
 				errExc(result.Err())
 				RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
-				_, err = w.Write([]byte("Document of the  \"" + username + "\"  was updated" +
-					"\nUsername: \"" + username + "\" acquires a new tokens " +
-					"\nAccess token: " + AccessToken +
-					"\nRefresh token in base64: " + RefreshTokenBase64))
+				_, err = w.Write([]byte("Access: " + AccessToken +
+					" Refresh: " + RefreshTokenBase64))
 				errExc(err)
 				flag = "update"
+				fmt.Println("Tokens were refreshed")
 			}
 		}
 		if flag == "" {
-			_, err := w.Write([]byte("The refresh token was not found the database"))
+			_, err := w.Write([]byte("Токен обновления не был найден в базе данных"))
 			errExc(err)
+			fmt.Println("Refresh token was not found in DB")
 		}
 		errExc(session.CommitTransaction(context.TODO()))
 		session.EndSession(context.TODO())
 
-	})).Methods("Get")
+	}))).Methods("Get")
 
-	router.Handle("/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
+	router.Handle("/delete", jwtMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refresh, err := base64.StdEncoding.DecodeString(r.Header.Get("refresh"))
 		if err != nil {
-			_, err := w.Write([]byte("The refresh token is not invalid"))
+			_, err := w.Write([]byte("Некорректный токен обновления"))
 			errExc(err)
-			return
-		}
-		if len(refresh) < 2 {
-			_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
-			errExc(err)
+			fmt.Println("Invalid refresh token")
 			return
 		}
 		claims := jwt.MapClaims{}
@@ -163,8 +150,9 @@ func handlers() {
 			return []byte("WitmanStas"), nil
 		})
 		if err != nil {
-			_, err := w.Write([]byte("The refresh token is not invalid"))
+			_, err := w.Write([]byte("Некорректный токен обновления"))
 			errExc(err)
+			fmt.Println("Invalid refresh token")
 			return
 		}
 		collection := client.Database("BaseOne").Collection("ACol")
@@ -183,44 +171,44 @@ func handlers() {
 				_, err = collection.DeleteOne(context.TODO(), bson.D{{"refresh", users.Refresh}})
 				errExc(err)
 				flag = "delete"
+				fmt.Println("Token was deleted")
 			}
 		}
 		if flag == "" {
-			_, err := w.Write([]byte("The refresh token was not found the database"))
+			_, err := w.Write([]byte("Токен обновления не был найден"))
 			errExc(err)
+			fmt.Println("Refresh token was not found in DB")
 		} else {
-			_, err = w.Write([]byte("Document of the \"" + username + "\" was deleted"))
+			_, err = w.Write([]byte("Запись пользователя \"" + username + "\" была удалена"))
 			errExc(err)
 		}
 
 		errExc(session.CommitTransaction(context.TODO()))
 		session.EndSession(context.TODO())
 
-	})).Methods("Get")
+	}))).Methods("Get")
 
-	router.Handle("/clear", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	router.Handle("/clear", jwtMiddleware.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		username := r.FormValue("user")
-		if username == "" {
-			_, err := w.Write([]byte("Please write username: /clear?user=\"username\""))
-			errExc(err)
-			return
-		}
 		collection := client.Database("BaseOne").Collection("ACol")
 		session, err := client.StartSession()
 		errExc(err)
 		errExc(session.StartTransaction())
 		deleteResult, err := collection.DeleteMany(context.TODO(), bson.D{{"guid", username}})
 		errExc(err)
-		str := "Documents of the \"" + username + "\" were not found in the database "
+		str := "Записи пользователя \"" + username + "\" не были найдены в базе данных "
 		if deleteResult.DeletedCount > 0 {
-			str = "Documents of the \"" + username + "\" user were deleted"
+			str = "Записи пользователя \"" + username + "\" были удалены"
+			fmt.Println("Documents were deleted")
+		} else {
+			fmt.Println("Documents were not found in DB")
 		}
 		errExc(session.CommitTransaction(context.TODO()))
 		session.EndSession(context.TODO())
 		_, err = w.Write([]byte(str))
 		errExc(err)
 
-	})).Methods("Get")
+	}))).Methods("Get")
 
 	port := os.Getenv("PORT")
 	fmt.Println("Listen on port: " + port)
@@ -228,12 +216,11 @@ func handlers() {
 }
 
 func receiver(user string) (string, string) {
-	var mySigningKey = []byte("WitmanStas")
 	AccessToken := jwt.New(jwt.SigningMethodHS512)
 	claimsAccess := make(jwt.MapClaims)
 	claimsAccess["user"] = user
 	claimsAccess["name"] = "AccessToken"
-	claimsAccess["exp"] = time.Now().Add(time.Minute * 20).Unix()
+	claimsAccess["exp"] = time.Now().Add(time.Second * 20).Unix()
 	AccessToken.Claims = claimsAccess
 	tokenAccessString, err := AccessToken.SignedString(mySigningKey)
 	errExc(err)

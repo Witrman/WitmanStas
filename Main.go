@@ -62,13 +62,165 @@ func handlers() {
 		errExc(err)
 	})).Methods("Get")
 
-	router.Handle("/receive", http.HandlerFunc(receiving)).Methods("Get")
+	router.Handle("/receive", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username := r.FormValue("user")
+		if username == "" {
+			_, err := w.Write([]byte("Please write username: /receive?user=\"username\""))
+			errExc(err)
+			return
+		}
+		AccessToken, RefreshToken := receiver(username)
+		collection := client.Database("BaseOne").Collection("ACol")
+		session, err := client.StartSession()
+		errExc(err)
+		errExc(session.StartTransaction())
+		bcryptHashResresh, err := bcrypt.GenerateFromPassword([]byte(RefreshToken), bcrypt.DefaultCost)
+		_, err = collection.InsertOne(context.TODO(), userData{GUID: username, Access: AccessToken, Refresh: bcryptHashResresh})
+		errExc(err)
+		errExc(session.CommitTransaction(context.TODO()))
+		session.EndSession(context.TODO())
+		RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
+		_, err = w.Write([]byte("username: \"" + username + "\" acquires a new tokens " +
+			"\nAccess token: " + AccessToken +
+			"\nRefresh token in base64: " + RefreshTokenBase64))
+		errExc(err)
 
-	router.Handle("/refresh", http.HandlerFunc(refreshing)).Methods("Get")
+	})).Methods("Get")
 
-	router.Handle("/delete", http.HandlerFunc(deleting)).Methods("Get")
+	router.Handle("/refresh", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
+		if err != nil {
+			_, err := w.Write([]byte("The refresh token is not invalid"))
+			errExc(err)
+			return
+		}
+		if len(refresh) < 2 {
+			_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
+			errExc(err)
+			return
+		}
+		claims := jwt.MapClaims{}
+		_, err = jwt.ParseWithClaims(string(refresh), claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte("WitmanStas"), nil
+		})
+		if err != nil {
+			_, err := w.Write([]byte("The refresh token is not invalid"))
+			errExc(err)
+			return
+		}
+		collection := client.Database("BaseOne").Collection("ACol")
+		session, err := client.StartSession()
+		errExc(err)
+		errExc(session.StartTransaction())
+		username := claims["user"].(string)
+		res, err := collection.Find(context.TODO(), bson.D{{"guid", username}})
+		errExc(err)
+		flag := ""
+		for res.Next(context.TODO()) {
+			var users userData
+			errExc(res.Decode(&users))
+			err = bcrypt.CompareHashAndPassword(users.Refresh, refresh)
+			if err == nil {
+				AccessToken, RefreshToken := receiver(username)
+				bcryptHashResresh, err := bcrypt.GenerateFromPassword([]byte(RefreshToken), bcrypt.DefaultCost)
+				errExc(err)
+				var users userData
+				errExc(res.Decode(&users))
+				result := collection.FindOneAndReplace(context.TODO(), bson.D{{"refresh", users.Refresh}}, userData{GUID: username, Access: AccessToken, Refresh: bcryptHashResresh})
+				errExc(result.Err())
+				RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
+				_, err = w.Write([]byte("Document of the  \"" + username + "\"  was updated" +
+					"\nUsername: \"" + username + "\" acquires a new tokens " +
+					"\nAccess token: " + AccessToken +
+					"\nRefresh token in base64: " + RefreshTokenBase64))
+				errExc(err)
+				flag = "update"
+			}
+		}
+		if flag == "" {
+			_, err := w.Write([]byte("The refresh token was not found the database"))
+			errExc(err)
+		}
+		errExc(session.CommitTransaction(context.TODO()))
+		session.EndSession(context.TODO())
 
-	router.Handle("/clear", http.HandlerFunc(clearing)).Methods("Get")
+	})).Methods("Get")
+
+	router.Handle("/delete", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
+		if err != nil {
+			_, err := w.Write([]byte("The refresh token is not invalid"))
+			errExc(err)
+			return
+		}
+		if len(refresh) < 2 {
+			_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
+			errExc(err)
+			return
+		}
+		claims := jwt.MapClaims{}
+		_, err = jwt.ParseWithClaims(string(refresh), claims, func(token *jwt.Token) (interface{}, error) {
+			return []byte("WitmanStas"), nil
+		})
+		if err != nil {
+			_, err := w.Write([]byte("The refresh token is not invalid"))
+			errExc(err)
+			return
+		}
+		collection := client.Database("BaseOne").Collection("ACol")
+		session, err := client.StartSession()
+		errExc(err)
+		errExc(session.StartTransaction())
+		username := claims["user"].(string)
+		res, err := collection.Find(context.TODO(), bson.D{{"guid", username}})
+		errExc(err)
+		flag := ""
+		for res.Next(context.TODO()) {
+			var users userData
+			errExc(res.Decode(&users))
+			err = bcrypt.CompareHashAndPassword(users.Refresh, refresh)
+			if err == nil {
+				_, err = collection.DeleteOne(context.TODO(), bson.D{{"refresh", users.Refresh}})
+				errExc(err)
+				flag = "delete"
+			}
+		}
+		if flag == "" {
+			_, err := w.Write([]byte("The refresh token was not found the database"))
+			errExc(err)
+		} else {
+			_, err = w.Write([]byte("Document of the \"" + username + "\" was deleted"))
+			errExc(err)
+		}
+
+		errExc(session.CommitTransaction(context.TODO()))
+		session.EndSession(context.TODO())
+
+	})).Methods("Get")
+
+	router.Handle("/clear", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username := r.FormValue("user")
+		if username == "" {
+			_, err := w.Write([]byte("Please write username: /clear?user=\"username\""))
+			errExc(err)
+			return
+		}
+		collection := client.Database("BaseOne").Collection("ACol")
+		session, err := client.StartSession()
+		errExc(err)
+		errExc(session.StartTransaction())
+		deleteResult, err := collection.DeleteMany(context.TODO(), bson.D{{"guid", username}})
+		errExc(err)
+		str := "Documents of the \"" + username + "\" were not found in the database "
+		if deleteResult.DeletedCount > 0 {
+			str = "Documents of the \"" + username + "\" user were deleted"
+		}
+		errExc(session.CommitTransaction(context.TODO()))
+		session.EndSession(context.TODO())
+		_, err = w.Write([]byte(str))
+		errExc(err)
+
+	})).Methods("Get")
 
 	port := os.Getenv("PORT")
 	fmt.Println("Listen on port: " + port)
@@ -95,147 +247,4 @@ func receiver(user string) (string, string) {
 	tokenRefreshString, err := RefreshToken.SignedString(mySigningKey)
 	errExc(err)
 	return tokenAccessString, tokenRefreshString
-}
-
-func receiving(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("user")
-	if username == "" {
-		_, err := w.Write([]byte("Please write username: /receive?user=\"username\""))
-		errExc(err)
-		return
-	}
-	AccessToken, RefreshToken := receiver(username)
-	collection := client.Database("BaseOne").Collection("ACol")
-	session, err := client.StartSession()
-	errExc(err)
-	errExc(session.StartTransaction())
-	bcryptHashResresh, err := bcrypt.GenerateFromPassword([]byte(RefreshToken), bcrypt.DefaultCost)
-	_, err = collection.InsertOne(context.TODO(), userData{GUID: username, Access: AccessToken, Refresh: bcryptHashResresh})
-	errExc(err)
-	errExc(session.CommitTransaction(context.TODO()))
-	session.EndSession(context.TODO())
-	RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
-	_, err = w.Write([]byte("username: \"" + username + "\" acquires a new tokens " +
-		"\nAccess token: " + AccessToken +
-		"\nRefresh token in base64: " + RefreshTokenBase64))
-	errExc(err)
-}
-
-func refreshing(w http.ResponseWriter, r *http.Request) {
-	refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
-	errExc(err)
-	if len(refresh) < 2 {
-		_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
-		errExc(err)
-		return
-	}
-	claims := jwt.MapClaims{}
-	_, err = jwt.ParseWithClaims(string(refresh), claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte("WitmanStas"), nil
-	})
-	errExc(err)
-	collection := client.Database("BaseOne").Collection("ACol")
-	session, err := client.StartSession()
-	errExc(err)
-	errExc(session.StartTransaction())
-	username := claims["user"].(string)
-	res, err := collection.Find(context.TODO(), bson.D{{"guid", username}})
-	errExc(err)
-	flag := ""
-	for res.Next(context.TODO()) {
-		var users userData
-		errExc(res.Decode(&users))
-		err = bcrypt.CompareHashAndPassword(users.Refresh, refresh)
-		if err == nil {
-			AccessToken, RefreshToken := receiver(username)
-			bcryptHashResresh, err := bcrypt.GenerateFromPassword([]byte(RefreshToken), bcrypt.DefaultCost)
-			errExc(err)
-			var users userData
-			errExc(res.Decode(&users))
-			result := collection.FindOneAndReplace(context.TODO(), bson.D{{"refresh", users.Refresh}}, userData{GUID: username, Access: AccessToken, Refresh: bcryptHashResresh})
-			errExc(result.Err())
-			RefreshTokenBase64 := base64.StdEncoding.EncodeToString([]byte(RefreshToken))
-			_, err = w.Write([]byte("Document of the  \"" + username + "\"  was updated" +
-				"\nUsername: \"" + username + "\" acquires a new tokens " +
-				"\nAccess token: " + AccessToken +
-				"\nRefresh token in base64: " + RefreshTokenBase64))
-			errExc(err)
-			flag = "update"
-		}
-	}
-	if flag == "" {
-		_, err := w.Write([]byte("The refresh token was not found the database"))
-		errExc(err)
-	}
-	errExc(session.CommitTransaction(context.TODO()))
-	session.EndSession(context.TODO())
-
-}
-
-func deleting(w http.ResponseWriter, r *http.Request) {
-	refresh, err := base64.StdEncoding.DecodeString(r.FormValue("refresh"))
-	errExc(err)
-	if len(refresh) < 2 {
-		_, err := w.Write([]byte("Please write refresh token: /delete?refresh=\"refresh token\""))
-		errExc(err)
-		return
-	}
-	claims := jwt.MapClaims{}
-	_, err = jwt.ParseWithClaims(string(refresh), claims, func(token *jwt.Token) (interface{}, error) {
-		return []byte("WitmanStas"), nil
-	})
-	errExc(err)
-
-	collection := client.Database("BaseOne").Collection("ACol")
-	session, err := client.StartSession()
-	errExc(err)
-	errExc(session.StartTransaction())
-	username := claims["user"].(string)
-	res, err := collection.Find(context.TODO(), bson.D{{"guid", username}})
-	errExc(err)
-	flag := ""
-	for res.Next(context.TODO()) {
-		var users userData
-		errExc(res.Decode(&users))
-		err = bcrypt.CompareHashAndPassword(users.Refresh, refresh)
-		if err == nil {
-			_, err = collection.DeleteOne(context.TODO(), bson.D{{"refresh", users.Refresh}})
-			errExc(err)
-			flag = "delete"
-		}
-	}
-	if flag == "" {
-		_, err := w.Write([]byte("The refresh token was not found the database"))
-		errExc(err)
-	} else {
-		_, err = w.Write([]byte("Document of the \"" + username + "\" was deleted"))
-		errExc(err)
-	}
-
-	errExc(session.CommitTransaction(context.TODO()))
-	session.EndSession(context.TODO())
-
-}
-
-func clearing(w http.ResponseWriter, r *http.Request) {
-	username := r.FormValue("user")
-	if username == "" {
-		_, err := w.Write([]byte("Please write username: /clear?user=\"username\""))
-		errExc(err)
-		return
-	}
-	collection := client.Database("BaseOne").Collection("ACol")
-	session, err := client.StartSession()
-	errExc(err)
-	errExc(session.StartTransaction())
-	deleteResult, err := collection.DeleteMany(context.TODO(), bson.D{{"guid", username}})
-	errExc(err)
-	str := "Documents of the \"" + username + "\" were not found in the database "
-	if deleteResult.DeletedCount > 0 {
-		str = "Documents of the \"" + username + "\" user were deleted"
-	}
-	errExc(session.CommitTransaction(context.TODO()))
-	session.EndSession(context.TODO())
-	_, err = w.Write([]byte(str))
-	errExc(err)
 }
